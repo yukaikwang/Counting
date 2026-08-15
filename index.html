@@ -168,6 +168,15 @@ h3{font-size:15px;letter-spacing:.14em;}
 }
 .hand.dealer .who{color:var(--brass);}
 .hand.active .who{color:var(--brass);}
+.strip{
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:9px 0;margin-bottom:12px;font-family:var(--mono);font-size:12px;color:var(--sage);
+}
+.strip .row{display:flex;justify-content:space-between;gap:6px;}
+.strip b{color:var(--stock);font-weight:700;}
+.strip .ok b{color:var(--brass);}
+.strip .no b{color:#E9877E;}
+.strip .note{margin-top:7px;font-size:11px;color:#E9877E;}
 .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;}
 .acts button{
   font-family:var(--sig);font-size:14px;letter-spacing:.16em;text-transform:uppercase;
@@ -253,7 +262,7 @@ h3{font-size:15px;letter-spacing:.14em;}
   <div class="footnote">
     <b>Install it:</b> tap Share, then Add to Home Screen. It runs fullscreen with its own icon.<br>
     Counting is a skill, not a guarantee. Practice until the count is automatic before it costs you anything.<br>
-    <span style="font-family:var(--mono);color:var(--brass);">Build 3</span>
+    <span style="font-family:var(--mono);color:var(--brass);">Build 4</span>
   </div>
 </section>
 
@@ -281,6 +290,7 @@ h3{font-size:15px;letter-spacing:.14em;}
     <div class="meta" id="hud-meta"></div>
   </div>
   <div class="pen" id="pen" hidden><i id="pen-fill"></i></div>
+  <div class="strip" id="strip" hidden></div>
   <div class="stage" id="stage"></div>
   <div id="drill-foot"></div>
 </section>
@@ -418,7 +428,7 @@ function renderHome(){
     let score = '<b>—</b>new';
     if (st.runs){
       if (key === 'countdown') score = '<b>' + (st.best ? st.best.toFixed(1)+'s' : '—') + '</b>' + st.runs + ' runs';
-      else if (key === 'play') score = '<b>' + pct(st.correct, st.asked) + '</b>' + st.asked + ' hands';
+      else if (key === 'play') score = '<b>' + pct(st.correct, st.asked) + '</b>' + st.asked + ' plays';
       else score = '<b>' + pct(st.correct, st.asked) + '</b>' + st.runs + ' runs';
     }
     const b = document.createElement('button');
@@ -540,6 +550,7 @@ function startDrill(key){
   $('drill-title').textContent = DRILLS[key].name;
   $('hud-tally').classList.remove('big');
   $('pen').hidden = true;
+  $('strip').hidden = true;
   $('drill-foot').innerHTML = '';
   show('drill');
   ({speed:runSpeed, countdown:runCountdown, shoe:runShoe, truecount:runTrue, play:runPlay})[key]();
@@ -728,12 +739,13 @@ function runPlay(){
   const shoe = buildShoe(cfg.decks);
   const cut = Math.floor(shoe.length * 0.75);
   let i = 0, hands = [], active = 0, dealer = [], hole = true, over = true;
-  let w = 0, l = 0, p = 0, bjs = 0;
+  let w = 0, l = 0, p = 0, bjs = 0, ok = 0, bad = 0, lastMiss = '';
   D.cw = Math.min(66, Math.round(window.innerWidth * 0.14));
   $('pen').hidden = false;
 
   const pull = () => { const c = shoe[i++]; D.rc += c.v; return c; };
   const tenish = r => (r === '10' || r === 'J' || r === 'Q' || r === 'K');
+  const cval = r => r === 'A' ? 11 : (tenish(r) ? 10 : Number(r));
   const val = cs => {
     let t = 0, a = 0;
     for (const c of cs){
@@ -745,6 +757,64 @@ function runPlay(){
     return { t, soft: a > 0 };
   };
   const pairable = (a,b) => (tenish(a.r) && tenish(b.r)) || a.r === b.r;
+
+  /* multi-deck basic strategy, doubling after split allowed, no surrender */
+  const NAME = { hit:'Hit', stand:'Stand', double:'Double', split:'Split' };
+  const best = hd => {
+    const cs = hd.cards, u = cval(dealer[0].r), v = val(cs);
+    const two = cs.length === 2 && !hd.aceSplit;
+    const canDouble = two;
+    const canSplit = two && hands.length < 4 && pairable(cs[0], cs[1]);
+    if (canSplit){
+      const pv = cval(cs[0].r);
+      if (pv === 11) return 'split';
+      if (pv === 9) return (u <= 6 || u === 8 || u === 9) ? 'split' : 'stand';
+      if (pv === 8) return 'split';
+      if (pv === 7) return u <= 7 ? 'split' : 'hit';
+      if (pv === 6) return u <= 6 ? 'split' : 'hit';
+      if (pv === 4) return (u === 5 || u === 6) ? 'split' : 'hit';
+      if (pv === 3 || pv === 2) return u <= 7 ? 'split' : 'hit';
+      /* pairs of 10s and 5s fall through to the totals below */
+    }
+    if (v.soft && v.t <= 21){
+      if (v.t >= 20) return 'stand';
+      if (v.t === 19) return (cfg.h17 && canDouble && u === 6) ? 'double' : 'stand';
+      if (v.t === 18){
+        if (canDouble && u >= 3 && u <= 6) return 'double';
+        if (cfg.h17 && canDouble && u === 2) return 'double';
+        if (u >= 9) return 'hit';
+        return 'stand';
+      }
+      if (v.t === 17) return (canDouble && u >= 3 && u <= 6) ? 'double' : 'hit';
+      if (v.t === 16 || v.t === 15) return (canDouble && u >= 4 && u <= 6) ? 'double' : 'hit';
+      if (v.t === 14 || v.t === 13) return (canDouble && u >= 5 && u <= 6) ? 'double' : 'hit';
+      return 'hit';
+    }
+    const t = v.t;
+    if (t >= 17) return 'stand';
+    if (t >= 13) return u <= 6 ? 'stand' : 'hit';
+    if (t === 12) return (u >= 4 && u <= 6) ? 'stand' : 'hit';
+    if (t === 11) return canDouble ? ((u === 11 && !cfg.h17) ? 'hit' : 'double') : 'hit';
+    if (t === 10) return (canDouble && u <= 9) ? 'double' : 'hit';
+    if (t === 9)  return (canDouble && u >= 3 && u <= 6) ? 'double' : 'hit';
+    return 'hit';
+  };
+  const handLbl = hd => {
+    const cs = hd.cards, v = val(cs);
+    if (cs.length === 2 && pairable(cs[0], cs[1])) return cs[0].r + ',' + cs[1].r;
+    return (v.soft && v.t <= 21 ? 'soft ' : '') + v.t;
+  };
+  const upLbl = () => dealer[0].r === 'A' ? 'A' : (tenish(dealer[0].r) ? '10' : dealer[0].r);
+
+  const strip = () => {
+    $('strip').hidden = false;
+    $('strip').innerHTML =
+      '<div class="row">' +
+        '<span>W <b>'+w+'</b></span><span>L <b>'+l+'</b></span><span>P <b>'+p+'</b></span>' +
+        '<span class="ok">Correct <b>'+ok+'</b></span><span class="no">Wrong <b>'+bad+'</b></span>' +
+      '</div>' +
+      (lastMiss ? '<div class="note">'+lastMiss+'</div>' : '');
+  };
 
   const render = () => {
     const dv = val(hole ? dealer.slice(0,1) : dealer);
@@ -765,7 +835,8 @@ function runPlay(){
     });
     if (over) h += '<div class="tapcue">' + (i >= cut ? 'Cut card · tap to finish' : 'Tap to deal') + '</div>';
     $('stage').innerHTML = h;
-    hud('Hands', w + l + p, 'W <b>'+w+'</b> · L <b>'+l+'</b> · P <b>'+p+'</b>');
+    hud(null, null, '');
+    strip();
     $('pen-fill').style.width = Math.min(100, i/cut*100) + '%';
   };
 
@@ -797,6 +868,9 @@ function runPlay(){
 
   const act = a => {
     const hd = hands[active];
+    const want = best(hd);
+    if (a === want){ ok++; lastMiss = ''; }
+    else { bad++; lastMiss = 'Last miss · ' + handLbl(hd) + ' v ' + upLbl() + ' → ' + NAME[want]; }
     if (a === 'hit'){ hd.cards.push(pull()); settle(); }
     else if (a === 'stand'){ advance(); }
     else if (a === 'double'){ hd.doubled = true; hd.cards.push(pull()); advance(); }
@@ -867,20 +941,22 @@ function runPlay(){
   };
 
   const endShoe = () => {
-    const total = w + l + p;
-    finish(w > l, [
+    const total = w + l + p, plays = ok + bad;
+    finish(bad === 0, [
+      ['Correct plays', String(ok)],
+      ['Incorrect plays', String(bad)],
+      ['Strategy accuracy', pct(ok, plays)],
       ['Hands played', String(total)],
-      ['Won', String(w)],
-      ['Lost', String(l)],
-      ['Pushed', String(p)],
+      ['W / L / P', w + ' / ' + l + ' / ' + p],
       ['Blackjacks', String(bjs)],
       ['Win rate', pct(w, total)],
       ['Final running count', fmt(D.rc)]
-    ], w, total);
+    ], ok, plays);
   };
 
   $('stage').innerHTML = '<div class="card back" style="--cw:'+Math.min(120,window.innerWidth*0.28)+'px"></div><div class="tapcue">Tap to deal</div>';
-  hud('Hands', 0, cfg.decks + ' decks<br>soft 17 ' + (cfg.h17 ? 'hits' : 'stands'));
+  hud(null, null, '');
+  strip();
   $('stage').onclick = deal;
 }
 
@@ -906,8 +982,8 @@ async function finish(ok, rows, correct, asked, bestTime){
   v.className = 'verdict ' + (ok ? 'ok' : 'no');
   v.querySelector('.mark').textContent = ok ? '✓' : '✗';
   v.querySelector('.msg').textContent = ok
-    ? (current==='countdown' ? 'Deck counted clean' : 'Count held')
-    : 'Count lost';
+    ? (current==='countdown' ? 'Deck counted clean' : current==='play' ? 'Perfect basic strategy' : 'Count held')
+    : (current==='play' ? 'Off basic strategy' : 'Count lost');
   $('result-rows').innerHTML = rows.map(r => '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>').join('');
   show('result');
 }
