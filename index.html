@@ -433,7 +433,7 @@ function openSetup(key){
   let h = '';
   if (key === 'speed'){
     h += optRow('Cards per round','count',[20,30,52,80]);
-    h += optRow('Seconds per card','speed',[2000,1400,1000,700,500,350],['2.0','1.4','1.0','0.7','0.5','0.35']);
+    h += optRow('Seconds per card','speed',[3000,2000,1400,1000,700,500,350],['3.0','2.0','1.4','1.0','0.7','0.5','0.35']);
     h += optRow('Decks in shoe','decks',[1,2,6,8]);
   } else if (key === 'countdown'){
     h += optRow('Cards per flip','flip',[1,2],['One','Two']);
@@ -611,14 +611,16 @@ function runShoe(){
     for (let s=0; s<cfg.spots; s++) hands.push([shoe[i++], shoe[i++]]);
     const dealer = [shoe[i++], shoe[i++]];
     [...hands.flat(), ...dealer].forEach(c => D.rc += c.v);
+    const willAsk = (round % cfg.ask === 0 || i >= cut);
     $('stage').innerHTML =
       '<div class="hand dealer"><div class="who">Dealer</div><div class="spread">'+dealer.map(c=>cardHTML(c,'deal')).join('')+'</div></div>' +
       hands.map((h,n) => '<div class="hand"><div class="who">Spot '+(n+1)+'</div><div class="spread">'+h.map(c=>cardHTML(c,'deal')).join('')+'</div></div>').join('') +
-      '<div class="tapcue">Tap for next round</div>';
+      (willAsk
+        ? '<div class="tapcue" style="color:var(--brass)">Tap to call the count</div>'
+        : '<div class="tapcue">Tap for next round</div>');
     hud('Round', round, 'Cards out <b>'+i+'</b><br>of '+total);
     $('pen-fill').style.width = Math.min(100, i/cut*100) + '%';
-
-    if (round % cfg.ask === 0 || i >= cut) setTimeout(quiz, 260);
+    $('stage').onclick = willAsk ? quiz : deal;
   };
 
   const quiz = () => {
