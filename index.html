@@ -167,6 +167,15 @@ h3{font-size:15px;letter-spacing:.14em;}
   color:var(--sage);margin-bottom:5px;text-align:center;
 }
 .hand.dealer .who{color:var(--brass);}
+.hand.active .who{color:var(--brass);}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;}
+.acts button{
+  font-family:var(--sig);font-size:14px;letter-spacing:.16em;text-transform:uppercase;
+  padding:16px 0;border-radius:9px;border:1px solid var(--line);color:var(--text);cursor:pointer;
+  background:linear-gradient(180deg,var(--felt-3),var(--felt-2));
+}
+.acts button:active{background:var(--line);}
+.acts button[disabled]{opacity:.28;}
 .tapcue{font-family:var(--sig);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--sage);}
 
 .prompt{text-align:center;}
@@ -243,7 +252,8 @@ h3{font-size:15px;letter-spacing:.14em;}
 
   <div class="footnote">
     <b>Install it:</b> tap Share, then Add to Home Screen. It runs fullscreen with its own icon.<br>
-    Counting is a skill, not a guarantee. Practice until the count is automatic before it costs you anything.
+    Counting is a skill, not a guarantee. Practice until the count is automatic before it costs you anything.<br>
+    <span style="font-family:var(--mono);color:var(--brass);">Build 3</span>
   </div>
 </section>
 
@@ -338,6 +348,11 @@ const DRILLS = {
     n:'04', name:'True count',
     blurb:'Running count divided by decks remaining. Ten questions, no cards.',
     long:'Pure conversion math. Truncated toward zero or rounded to nearest, both count as right.'
+  },
+  play: {
+    n:'05', name:'Play a shoe',
+    blurb:'Straight blackjack. Hit, stand, double, split. No chips.',
+    long:'Play out a full shoe against the dealer. Splits up to four hands, doubles on any two cards, split aces get one card each.'
   }
 };
 
@@ -370,7 +385,7 @@ const store = {
 };
 
 let stats = {};
-let cfg = { decks:6, speed:1000, count:30, flip:1, spots:2, ask:3 };
+let cfg = { decks:6, speed:1000, count:30, flip:1, spots:2, ask:3, h17:0 };
 
 /* ============================================================
    Screens
@@ -403,6 +418,7 @@ function renderHome(){
     let score = '<b>—</b>new';
     if (st.runs){
       if (key === 'countdown') score = '<b>' + (st.best ? st.best.toFixed(1)+'s' : '—') + '</b>' + st.runs + ' runs';
+      else if (key === 'play') score = '<b>' + pct(st.correct, st.asked) + '</b>' + st.asked + ' hands';
       else score = '<b>' + pct(st.correct, st.asked) + '</b>' + st.runs + ' runs';
     }
     const b = document.createElement('button');
@@ -443,8 +459,12 @@ function openSetup(key){
     h += optRow('Player spots','spots',[1,2,3]);
     h += optRow('Ask every N rounds','ask',[2,3,5],['2','3','5']);
     h += '<p class="hint">Dealer hole card is shown, since you are counting every card that comes out.</p>';
-  } else {
+  } else if (key === 'truecount'){
     h += '<p class="hint">Ten conversions. You get a running count and the cards left in the shoe, you give the true count.</p>';
+  } else {
+    h += optRow('Decks','decks',[1,2,6,8]);
+    h += optRow('Dealer on soft 17','h17',[0,1],['Stands','Hits']);
+    h += '<p class="hint">Blackjack pays out as a win. Play runs until the cut card at 75 percent.</p>';
   }
   $('setup-body').innerHTML = h;
   $('setup-body').querySelectorAll('.opt').forEach(b => {
@@ -522,7 +542,7 @@ function startDrill(key){
   $('pen').hidden = true;
   $('drill-foot').innerHTML = '';
   show('drill');
-  ({speed:runSpeed, countdown:runCountdown, shoe:runShoe, truecount:runTrue})[key]();
+  ({speed:runSpeed, countdown:runCountdown, shoe:runShoe, truecount:runTrue, play:runPlay})[key]();
 }
 
 function runSpeed(){
@@ -699,6 +719,169 @@ function runTrue(){
   };
   D.t0 = Date.now();
   next();
+}
+
+/* ============================================================
+   Drill: play a shoe (straight blackjack, no chips)
+   ============================================================ */
+function runPlay(){
+  const shoe = buildShoe(cfg.decks);
+  const cut = Math.floor(shoe.length * 0.75);
+  let i = 0, hands = [], active = 0, dealer = [], hole = true, over = true;
+  let w = 0, l = 0, p = 0, bjs = 0;
+  D.cw = Math.min(66, Math.round(window.innerWidth * 0.14));
+  $('pen').hidden = false;
+
+  const pull = () => { const c = shoe[i++]; D.rc += c.v; return c; };
+  const tenish = r => (r === '10' || r === 'J' || r === 'Q' || r === 'K');
+  const val = cs => {
+    let t = 0, a = 0;
+    for (const c of cs){
+      if (c.r === 'A'){ a++; t += 11; }
+      else if (tenish(c.r)) t += 10;
+      else t += Number(c.r);
+    }
+    while (t > 21 && a > 0){ t -= 10; a--; }
+    return { t, soft: a > 0 };
+  };
+  const pairable = (a,b) => (tenish(a.r) && tenish(b.r)) || a.r === b.r;
+
+  const render = () => {
+    const dv = val(hole ? dealer.slice(0,1) : dealer);
+    let h = '<div class="hand dealer"><div class="who">Dealer · ' +
+      (hole ? 'shows ' + dv.t : dv.t + (dv.t > 21 ? ' bust' : '')) + '</div><div class="spread">' +
+      (hole
+        ? cardHTML(dealer[0]) + '<div class="card back" style="--cw:'+D.cw+'px"></div>'
+        : dealer.map(c => cardHTML(c)).join('')) +
+      '</div></div>';
+    hands.forEach((hd, n) => {
+      const v = val(hd.cards);
+      const label = (hands.length > 1 ? 'Hand ' + (n+1) : 'You') + ' · ' + v.t +
+        (v.soft && v.t <= 21 ? ' soft' : '') + (hd.doubled ? ' · dbl' : '') +
+        (hd.result ? ' · <span class="'+hd.rcls+'">'+hd.result+'</span>' : '');
+      h += '<div class="hand play' + (!over && n === active ? ' active' : '') + '">' +
+        '<div class="who">' + label + '</div><div class="spread">' +
+        hd.cards.map(c => cardHTML(c)).join('') + '</div></div>';
+    });
+    if (over) h += '<div class="tapcue">' + (i >= cut ? 'Cut card · tap to finish' : 'Tap to deal') + '</div>';
+    $('stage').innerHTML = h;
+    hud('Hands', w + l + p, 'W <b>'+w+'</b> · L <b>'+l+'</b> · P <b>'+p+'</b>');
+    $('pen-fill').style.width = Math.min(100, i/cut*100) + '%';
+  };
+
+  const acts = () => {
+    if (over){
+      $('drill-foot').innerHTML = '';
+      $('stage').onclick = () => (i >= cut) ? endShoe() : deal();
+      return;
+    }
+    $('stage').onclick = null;
+    const hd = hands[active];
+    const two = hd.cards.length === 2 && !hd.aceSplit;
+    const canSplit = two && hands.length < 4 && pairable(hd.cards[0], hd.cards[1]);
+    $('drill-foot').innerHTML = '<div class="acts">' +
+      '<button data-a="hit">Hit</button>' +
+      '<button data-a="stand">Stand</button>' +
+      '<button data-a="double"' + (two ? '' : ' disabled') + '>Double</button>' +
+      '<button data-a="split"' + (canSplit ? '' : ' disabled') + '>Split</button>' +
+      '</div>';
+    $('drill-foot').querySelectorAll('button').forEach(b => {
+      if (!b.disabled) b.onclick = () => act(b.dataset.a);
+    });
+  };
+
+  const settle = () => {
+    if (val(hands[active].cards).t >= 21) advance();
+    else { render(); acts(); }
+  };
+
+  const act = a => {
+    const hd = hands[active];
+    if (a === 'hit'){ hd.cards.push(pull()); settle(); }
+    else if (a === 'stand'){ advance(); }
+    else if (a === 'double'){ hd.doubled = true; hd.cards.push(pull()); advance(); }
+    else if (a === 'split'){
+      const moved = hd.cards.pop();
+      const isAces = hd.cards[0].r === 'A';
+      const nh = { cards:[moved], doubled:false, result:null, split:true, aceSplit:isAces };
+      hd.split = true; hd.aceSplit = isAces;
+      hands.splice(active + 1, 0, nh);
+      hd.cards.push(pull());
+      nh.cards.push(pull());
+      if (isAces) advance(); else settle();
+    }
+  };
+
+  const advance = () => {
+    active++;
+    while (active < hands.length && (hands[active].aceSplit || val(hands[active].cards).t >= 21)) active++;
+    if (active >= hands.length) dealerTurn();
+    else { render(); acts(); }
+  };
+
+  const dealerTurn = () => {
+    hole = false;
+    const alive = hands.some(hd => val(hd.cards).t <= 21);
+    render();
+    const step = () => {
+      if ($('s-drill').hidden) return;
+      const v = val(dealer);
+      const mustHit = v.t < 17 || (v.t === 17 && v.soft && cfg.h17 === 1);
+      if (alive && mustHit){ dealer.push(pull()); render(); setTimeout(step, 430); }
+      else resolve();
+    };
+    setTimeout(step, alive ? 430 : 0);
+  };
+
+  const resolve = () => {
+    const dt = val(dealer).t;
+    const dealerBJ = dealer.length === 2 && dt === 21;
+    hands.forEach(hd => {
+      const t = val(hd.cards).t;
+      const playerBJ = !hd.split && hd.cards.length === 2 && t === 21;
+      let r;
+      if (playerBJ && dealerBJ) r = 'Push';
+      else if (playerBJ) r = 'Blackjack';
+      else if (t > 21) r = 'Bust';
+      else if (dealerBJ) r = 'Lose';
+      else if (dt > 21 || t > dt) r = 'Win';
+      else if (t < dt) r = 'Lose';
+      else r = 'Push';
+      hd.result = r;
+      if (r === 'Win' || r === 'Blackjack'){ w++; hd.rcls = 'hitclr'; if (r === 'Blackjack') bjs++; }
+      else if (r === 'Push'){ p++; hd.rcls = ''; }
+      else { l++; hd.rcls = 'miss'; }
+    });
+    over = true;
+    render();
+    acts();
+  };
+
+  const deal = () => {
+    over = false; hole = true; active = 0; dealer = [];
+    hands = [{ cards:[], doubled:false, result:null, split:false }];
+    hands[0].cards.push(pull()); dealer.push(pull());
+    hands[0].cards.push(pull()); dealer.push(pull());
+    if (val(hands[0].cards).t === 21 || val(dealer).t === 21){ hole = false; resolve(); return; }
+    render(); acts();
+  };
+
+  const endShoe = () => {
+    const total = w + l + p;
+    finish(w > l, [
+      ['Hands played', String(total)],
+      ['Won', String(w)],
+      ['Lost', String(l)],
+      ['Pushed', String(p)],
+      ['Blackjacks', String(bjs)],
+      ['Win rate', pct(w, total)],
+      ['Final running count', fmt(D.rc)]
+    ], w, total);
+  };
+
+  $('stage').innerHTML = '<div class="card back" style="--cw:'+Math.min(120,window.innerWidth*0.28)+'px"></div><div class="tapcue">Tap to deal</div>';
+  hud('Hands', 0, cfg.decks + ' decks<br>soft 17 ' + (cfg.h17 ? 'hits' : 'stands'));
+  $('stage').onclick = deal;
 }
 
 /* ============================================================
