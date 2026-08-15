@@ -170,16 +170,20 @@ h3{font-size:15px;letter-spacing:.14em;}
 .hand.active .who{color:var(--brass);}
 .strip{
   border-top:1px solid var(--line);border-bottom:1px solid var(--line);
-  padding:9px 0;margin-bottom:12px;font-family:var(--mono);font-size:12px;color:var(--sage);
+  padding:9px 0;margin-bottom:12px;font-family:var(--mono);font-size:13px;color:var(--sage);
 }
 .strip .row{display:flex;justify-content:space-between;gap:6px;}
 .strip b{color:var(--stock);font-weight:700;}
 .strip .ok b{color:var(--brass);}
 .strip .no b{color:#E9877E;}
 .strip .note{margin-top:7px;font-size:11px;color:#E9877E;}
+.hand .who{
+  font-family:var(--sig);font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--sage);margin-bottom:6px;text-align:center;
+}
 .hand .tot{
-  font-family:var(--mono);font-weight:700;font-size:24px;color:var(--stock);
-  letter-spacing:0;vertical-align:-4px;margin:0 4px;
+  font-family:var(--mono);font-weight:700;font-size:29px;color:var(--stock);
+  letter-spacing:0;vertical-align:-5px;margin:0 5px;
 }
 .hand.dealer .tot{color:var(--brass);}
 .hand .tot.bustclr{color:#E9877E;}
@@ -191,7 +195,7 @@ h3{font-size:15px;letter-spacing:.14em;}
 }
 .acts button:active{background:var(--line);}
 .acts button[disabled]{opacity:.28;}
-.tapcue{font-family:var(--sig);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--sage);}
+.tapcue{font-family:var(--sig);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--sage);}
 
 .prompt{text-align:center;}
 .prompt .q{font-family:var(--sig);font-size:17px;text-transform:uppercase;letter-spacing:.1em;}
@@ -268,7 +272,7 @@ h3{font-size:15px;letter-spacing:.14em;}
   <div class="footnote">
     <b>Install it:</b> tap Share, then Add to Home Screen. It runs fullscreen with its own icon.<br>
     Counting is a skill, not a guarantee. Practice until the count is automatic before it costs you anything.<br>
-    <span style="font-family:var(--mono);color:var(--brass);">Build 5</span>
+    <span style="font-family:var(--mono);color:var(--brass);">Build 6</span>
   </div>
 </section>
 
@@ -824,6 +828,10 @@ function runPlay(){
   };
 
   const render = () => {
+    const avail = Math.min(560, window.innerWidth) - 44;
+    const rows = hands.length + 1;
+    const capW = rows >= 4 ? 62 : rows === 3 ? 76 : 92;
+    D.cw = Math.round(Math.max(44, Math.min(capW, (avail - 24) / 4)));
     const dv = val(hole ? dealer.slice(0,1) : dealer);
     const dtot = cfg.tot
       ? (hole ? ' shows' : '') + ' <span class="tot'+(dv.t>21?' bustclr':'')+'">'+dv.t+'</span>' + (dv.t>21 ? 'bust' : '')
